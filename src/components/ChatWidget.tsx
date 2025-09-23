@@ -13,8 +13,9 @@ interface Message {
   sender: 'bot' | 'user';
 }
 
+// ✅ Fixed typing (removed any)
 interface UserData {
-  [key: string]: any;
+  [key: string]: string | undefined;
 }
 
 const TypingIndicator = () => (
@@ -60,7 +61,7 @@ export default function ChatWidget() {
   const handleOptionSelect = (option: FlowOption) => {
     addMessage(option.text, 'user');
 
-    const newData = { ...userData };
+    const newData: UserData = { ...userData };
     if (flowState === 'INITIAL' && option.service) newData.service = option.service;
     newData[flowState] = option.text;
     setUserData(newData);
@@ -157,7 +158,12 @@ export default function ChatWidget() {
               {showInput && currentStep.type === 'input' && (
                 <form onSubmit={handleFormSubmit} className="p-3 border-t border-gray-200 bg-white flex gap-2 rounded-b-xl">
                   {currentStep.inputType === 'phone' ? (
-                    <PhoneInput value={phoneValue} onChange={setPhoneValue} defaultCountry="IN" placeholder="Enter your phone number..." />
+                    <PhoneInput
+                      value={phoneValue}
+                      onChange={setPhoneValue}
+                      defaultCountry="IN"
+                      placeholder="Enter your phone number..."
+                    />
                   ) : (
                     <input
                       type={currentStep.inputType}
