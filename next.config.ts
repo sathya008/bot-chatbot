@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: "frame-ancestors 'self' https://client.botdigitalsolutions.com https://www.botdigitalsolutions.com https://www.thebot.agency http://localhost:3000 http://localhost:5173 https://www.ojkjobs.com",
+            value: "frame-ancestors 'self' https://client.botdigitalsolutions.com https://www.botdigitalsolutions.com https://www.thebot.agency http://localhost:3001 http://localhost:5173 https://www.ojkjobs.com",
           },
         ],
       },
