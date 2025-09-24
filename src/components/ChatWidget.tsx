@@ -297,3 +297,87 @@ export default function ChatWidget() {
     </div>
   );
 }
+
+
+// UPDATED TRACKING FUNCTIONS WITH DEBUGGING
+const trackChatSession = async (sessionId: string, accessKey: string) => {
+  const url = `${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/start_session/`;
+  console.log('🔄 Starting chat session:', { url, sessionId, accessKey });
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        access_key: accessKey
+      })
+    });
+    
+    console.log('✅ Session response status:', response.status);
+    const result = await response.json();
+    console.log('✅ Session response data:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Session error:', error);
+    return null;
+  }
+};
+
+const trackChatMessage = async (sessionId: string, messageType: string, content: string, flowState: string) => {
+  const url = `${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/track_message/`;
+  console.log('💬 Tracking message:', { sessionId, messageType, content: content.substring(0, 50) });
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        message_type: messageType,
+        content: content,
+        flow_state: flowState
+      })
+    });
+    
+    console.log('✅ Message response status:', response.status);
+    const result = await response.json();
+    console.log('✅ Message response data:', result);
+    
+  } catch (error) {
+    console.error('❌ Message error:', error);
+  }
+};
+
+const updateUserData = async (sessionId: string, userData: any) => {
+  const url = `${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/update_user_data/`;
+  console.log('📊 Updating user data:', { sessionId, userData });
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        user_data: userData
+      })
+    });
+    
+    console.log('✅ User data response status:', response.status);
+    const result = await response.json();
+    console.log('✅ User data response data:', result);
+    
+  } catch (error) {
+    console.error('❌ User data error:', error);
+  }
+};
