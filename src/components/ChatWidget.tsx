@@ -194,3 +194,189 @@ export default function ChatWidget() {
     </div>
   );
 }
+
+
+
+// ADD these interfaces at the top
+interface ChatTrackingData {
+  session_id: string;
+  message_type: 'user' | 'bot';
+  content: string;
+  flow_state: string;
+  user_data?: any;
+}
+
+// ADD these API functions inside the component
+const trackChatSession = async (sessionId: string, accessKey: string) => {
+  try {
+    const response = await fetch(`${activeConfig.apiUrl}/api/chat/start_session/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        access_key: accessKey
+      })
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('Error starting chat session:', error);
+    return null;
+  }
+};
+
+const trackChatMessage = async (trackingData: ChatTrackingData) => {
+  try {
+    const response = await fetch(`${activeConfig.apiUrl}/api/chat/track_message/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(trackingData)
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('Error tracking message:', error);
+    return null;
+  }
+};
+
+const updateUserData = async (sessionId: string, userData: any) => {
+  try {
+    const response = await fetch(`${activeConfig.apiUrl}/api/chat/update_user_data/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        user_data: userData
+      })
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating user data:', error);
+    return null;
+  }
+};
+
+// ADD this function to get access key
+const getAccessKeyForClient = (brandName: string): string => {
+  // Map brand names to access keys
+  const accessKeyMap: Record<string, string> = {
+    'The Bot Agency': process.env.NEXT_PUBLIC_ACCESS_KEY_THEBOT || 'the-bot',
+    'Global Softwares': process.env.NEXT_PUBLIC_ACCESS_KEY_GLOBAL || 'global-key',
+    'OJK Job Portal': process.env.NEXT_PUBLIC_ACCESS_KEY_OJK || 'ojk-key'
+  };
+  
+  return accessKeyMap[brandName] || process.env.NEXT_PUBLIC_ACCESS_KEY_THEBOT || 'the-bot';
+};
+
+export default function ChatWidget() {
+  const [sessionId, setSessionId] = useState<string>('');
+  
+  // Initialize session when component mounts
+  useEffect(() => {
+    const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setSessionId(newSessionId);
+    
+    // Start tracking session
+    const accessKey = getAccessKeyForClient(activeConfig.brandName);
+    trackChatSession(newSessionId, accessKey);
+  }, [activeConfig]);
+
+  // UPDATE your handleOptionSelect function
+  const handleOptionSelect = async (option: FlowOption) => {
+    addMessage(option.text, 'user');
+    
+    // Track user message
+    const accessKey = getAccessKeyForClient(activeConfig.brandName);
+    await trackChatMessage({
+      session_id: sessionId,
+      message_type: 'user',
+      content: option.text,
+      flow_state: flowState
+    });
+
+    const newUserData = { ...userData };
+    if (flowState === 'INITIAL' && option.service) newUserData.service = option.service;
+    newUserData[flowState] = option.text;
+    setUserData(newUserData);
+
+    if (option.action === 'OPEN_LINK' && option.link) {
+      window.open(option.link, '_blank');
+    }
+
+    setIsTyping(true);
+    setTimeout(async () => {
+      setIsTyping(false);
+      addMessage(option.botResponse, 'bot');
+      
+      // Track bot response
+      await trackChatMessage({
+        session_id: sessionId,
+        message_type: 'bot',
+        content: typeof option.botResponse === 'string' ? option.botResponse : 'Bot response',
+        flow_state: option.nextState
+      });
+      
+      setFlowState(option.nextState);
+      
+      // Update user data if this is a significant step
+      if (['COLLECT_PHONE', 'COLLECT_EMAIL', 'COLLECT_COMPANY_GS'].includes(flowState)) {
+        await updateUserData(sessionId, newUserData);
+      }
+    }, 1000);
+  };
+
+  // UPDATE your handleFormSubmit function
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const step = activeConfig.flow[flowState];
+    if (!step || step.type !== 'input') return;
+
+    const value = step.inputType === 'phone' ? phoneValue?.trim() : inputValue.trim();
+    if (!value) return;
+
+    const key = step.inputType;
+    addMessage(value, 'user');
+    
+    const updatedUserData = { ...userData, [key]: value };
+    setUserData(updatedUserData);
+
+    // Track user input
+    await trackChatMessage({
+      session_id: sessionId,
+      message_type: 'user',
+      content: value,
+      flow_state: flowState
+    });
+
+    setInputValue('');
+    setPhoneValue('');
+    setIsTyping(true);
+
+    setTimeout(async () => {
+      addMessage(step.botResponse, 'bot');
+      
+      // Track bot response
+      await trackChatMessage({
+        session_id: sessionId,
+        message_type: 'bot',
+        content: step.botResponse,
+        flow_state: step.nextState
+      });
+      
+      setFlowState(step.nextState);
+      setIsTyping(false);
+
+      // Update user data and potentially create lead
+      if (step.submitOnCompletion) {
+        await updateUserData(sessionId, updatedUserData);
+      }
+    }, 800);
+  };
+
+  // ... rest of your existing component code
+}
