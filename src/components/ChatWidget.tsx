@@ -9,6 +9,71 @@ import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { clientConfigurations, ClientConfiguration, FlowOption } from './chatbot-configurations';
 
+// ========== TRACKING FUNCTIONS ==========
+interface ChatTrackingData {
+  session_id: string;
+  message_type: 'user' | 'bot';
+  content: string;
+  flow_state: string;
+  user_data?: any;
+}
+
+// Tracking functions
+const trackChatSession = async (sessionId: string, accessKey: string) => {
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/start_session/`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sessionId, access_key: accessKey})
+    });
+  } catch (error) {
+    console.error('Error starting chat session:', error);
+  }
+};
+
+const trackChatMessage = async (sessionId: string, messageType: string, content: string, flowState: string) => {
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/track_message/`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        session_id: sessionId,
+        message_type: messageType,
+        content: content,
+        flow_state: flowState
+      })
+    });
+  } catch (error) {
+    console.error('Error tracking message:', error);
+  }
+};
+
+const updateUserData = async (sessionId: string, userData: any) => {
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_DJANGO_API_URL}/api/chat/update_user_data/`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        session_id: sessionId,
+        user_data: userData
+      })
+    });
+  } catch (error) {
+    console.error('Error updating user data:', error);
+  }
+};
+
+// Get access key based on brand
+const getAccessKey = (brandName: string) => {
+  const keys = {
+    'The Bot Agency': process.env.NEXT_PUBLIC_ACCESS_KEY_THEBOT,
+    'Global Softwares': process.env.NEXT_PUBLIC_ACCESS_KEY_GLOBAL,
+    'OJK Job Portal': process.env.NEXT_PUBLIC_ACCESS_KEY_OJK
+  };
+  return keys[brandName] || process.env.NEXT_PUBLIC_ACCESS_KEY_THEBOT;
+};
+// ========== END TRACKING FUNCTIONS ==========
+
 interface Message {
   id: number;
   text: string | React.ReactNode;
@@ -44,13 +109,22 @@ export default function ChatWidget() {
   const [isTyping, setIsTyping] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [phoneValue, setPhoneValue] = useState<string | undefined>('');
+  const [sessionId, setSessionId] = useState<string>(''); // Session tracking
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(2);
 
-  // Initialize chatbot messages
+  // Initialize chatbot messages and session tracking
   useEffect(() => {
     const initialMessage = `Hey 👋 I'm Harry from ${activeConfig.brandName}. How can I help you today?`;
     setMessages([{ id: 1, text: initialMessage, sender: 'bot' }]);
+    
+    // Initialize session tracking
+    const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setSessionId(newSessionId);
+    
+    // Start tracking session
+    const accessKey = getAccessKey(activeConfig.brandName);
+    trackChatSession(newSessionId, accessKey);
   }, [activeConfig]);
 
   const addMessage = (text: string | React.ReactNode, sender: 'user' | 'bot') => {
@@ -65,9 +139,18 @@ export default function ChatWidget() {
     setFlowState('INITIAL');
     setUserData({});
     setIsTyping(false);
+    
+    // Create new session when chat is reset
+    const newSessionId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setSessionId(newSessionId);
+    const accessKey = getAccessKey(activeConfig.brandName);
+    trackChatSession(newSessionId, accessKey);
   };
 
-  const handleOptionSelect = (option: FlowOption) => {
+  const handleOptionSelect = async (option: FlowOption) => {
+    // Track user message
+    await trackChatMessage(sessionId, 'user', option.text, flowState);
+    
     addMessage(option.text, 'user');
     const newUserData = { ...userData };
     if (flowState === 'INITIAL' && option.service) newUserData.service = option.service;
@@ -76,14 +159,21 @@ export default function ChatWidget() {
     if (option.action === 'OPEN_LINK' && option.link) window.open(option.link, '_blank');
 
     setIsTyping(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsTyping(false);
       addMessage(option.botResponse, 'bot');
+      
+      // Track bot response
+      await trackChatMessage(sessionId, 'bot', 
+        typeof option.botResponse === 'string' ? option.botResponse : 'Bot response', 
+        option.nextState
+      );
+      
       setFlowState(option.nextState);
     }, 1000);
   };
 
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const step = activeConfig.flow[flowState];
     if (!step || step.type !== 'input') return;
@@ -91,18 +181,31 @@ export default function ChatWidget() {
     const value = step.inputType === 'phone' ? phoneValue?.trim() : inputValue.trim();
     if (!value) return;
 
+    // Track user input
+    await trackChatMessage(sessionId, 'user', value, flowState);
+    
     const key = step.inputType;
     addMessage(value, 'user');
-    setUserData(prev => ({ ...prev, [key]: value }));
+    const updatedUserData = { ...userData, [key]: value };
+    setUserData(updatedUserData);
 
     setInputValue('');
     setPhoneValue('');
     setIsTyping(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       addMessage(step.botResponse, 'bot');
+      
+      // Track bot response
+      await trackChatMessage(sessionId, 'bot', step.botResponse, step.nextState);
+      
       setFlowState(step.nextState);
       setIsTyping(false);
+
+      // Update user data when form is complete
+      if (step.submitOnCompletion) {
+        await updateUserData(sessionId, updatedUserData);
+      }
     }, 800);
   };
 
